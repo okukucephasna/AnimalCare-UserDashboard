@@ -1,32 +1,52 @@
-# backend/routes/disease_routes.py
+# routes/disease_routes.py
 from flask import Blueprint, request, jsonify
-# from backend.config import get_db_connection
 from config import get_db_connection
-# from backend.utils.matching import match_disease
 from utils.matching import match_disease
-from psycopg2.extras import RealDictCursor
 
 disease_bp = Blueprint("disease_bp", __name__)
 
-@disease_bp.route("/predict-disease", methods=["POST"])
+@disease_bp.route("/api/predict-disease", methods=["POST"])
 def predict_disease():
-    data = request.json
-    animal = data.get("animal")              # e.g. "chickens"
-    selected_symptoms = data.get("symptoms") # e.g. ["fever", "cough"]
-
-    if not animal or not selected_symptoms:
-        return jsonify({"error": "Animal type and symptoms required"}), 400
-
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute(f"SELECT disease_name, symptoms, medicine FROM {animal};")
-        disease_rows = cursor.fetchall()
-        conn.close()
+        data = request.get_json()
 
-        result = match_disease(selected_symptoms, disease_rows)
-        return jsonify(result)
+        # Validate input presence
+        if not data:
+            return jsonify({"error": "Missing JSON body"}), 400
+
+        animal = data.get("animal")
+        symptoms = data.get("symptoms")
+
+        # Validate animal
+        valid_animals = ["chickens", "cows", "goats"]
+        if not animal:
+            return jsonify({"error": "Missing 'animal' field"}), 400
+        if animal not in valid_animals:
+            return jsonify({"error": f"Unknown animal type '{animal}'. Choose from {valid_animals}"}), 400
+
+        # Validate symptoms
+        if not symptoms or not isinstance(symptoms, list) or len(symptoms) == 0:
+            return jsonify({"error": "Please provide a list of symptoms"}), 400
+
+        # Proceed if all is valid
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Disease matching
+        disease = match_disease(cursor, animal, symptoms)
+
+        if not disease:
+            return jsonify({"message": "No disease match found for given symptoms"}), 404
+
+        return jsonify({"animal": animal, "predicted_disease": disease}), 200
 
     except Exception as e:
         print("Error:", e)
-        return jsonify({"error": "Database query failed"}), 500
+        return jsonify({"error": "An internal server error occurred"}), 500
+
+    finally:
+        try:
+            cursor.close()
+            conn.close()
+        except:
+            pass

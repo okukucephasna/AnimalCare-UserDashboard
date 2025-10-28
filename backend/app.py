@@ -1,21 +1,57 @@
 # backend/app.py
 import sys, os
-# Add current directory (backend) to Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from flask import Flask
+import logging
+from flask import Flask, send_from_directory
 from flask_cors import CORS
-from routes.disease_routes import disease_bp  # Local import now works
+from routes.disease_routes import disease_bp
 
-app = Flask(__name__)
-CORS(app)  # Allow frontend to communicate with backend
+# --- Logging setup ---
+LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
 
-# Register routes
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(os.path.join(LOG_DIR, "app.log")),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# --- Paths setup ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_BUILD_PATH = os.path.abspath(os.path.join(BASE_DIR, "../frontend/build"))
+
+# --- Flask app setup ---
+# 👇 Here’s the key fix: tell Flask where static files live
+app = Flask(
+    __name__,
+    static_folder=FRONTEND_BUILD_PATH,      # React build folder
+    static_url_path="/"                     # Serve it from root URL
+)
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})
+
+# --- Register routes ---
 app.register_blueprint(disease_bp, url_prefix="/api")
 
-@app.route("/")
-def home():
+# --- Serve React frontend ---
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_react(path):
+    target = os.path.join(FRONTEND_BUILD_PATH, path)
+    if path != "" and os.path.exists(target):
+        return send_from_directory(FRONTEND_BUILD_PATH, path)
+    else:
+        return send_from_directory(FRONTEND_BUILD_PATH, "index.html")
+
+# --- Health check ---
+@app.route("/api/health")
+def health_check():
+    logger.info("Health check route accessed")
     return {"message": "AnimalCare API is running"}
 
+# --- Main entry point ---
 if __name__ == "__main__":
-    app.run(debug=True)
+    logger.info("Starting Flask server...")
+    app.run(host="0.0.0.0", port=8000, debug=True)
