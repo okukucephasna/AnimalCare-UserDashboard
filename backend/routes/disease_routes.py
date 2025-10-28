@@ -1,48 +1,81 @@
-# routes/disease_routes.py
+# backend/routes/disease_routes.py
 from flask import Blueprint, request, jsonify
 from config import get_db_connection
 from utils.matching import match_disease
+import logging
 
-disease_bp = Blueprint("disease_bp", __name__)
+disease_bp = Blueprint("disease", __name__)
+logger = logging.getLogger(__name__)
 
-@disease_bp.route("/api/predict-disease", methods=["POST"])
+@disease_bp.route("/predict-disease", methods=["POST"])
 def predict_disease():
     try:
         data = request.get_json()
-
-        # Validate input presence
-        if not data:
-            return jsonify({"error": "Missing JSON body"}), 400
-
         animal = data.get("animal")
-        symptoms = data.get("symptoms")
+        symptoms = data.get("symptoms", [])
 
-        # Validate animal
-        valid_animals = ["chickens", "cows", "goats"]
-        if not animal:
-            return jsonify({"error": "Missing 'animal' field"}), 400
-        if animal not in valid_animals:
-            return jsonify({"error": f"Unknown animal type '{animal}'. Choose from {valid_animals}"}), 400
+        # Validate input
+        if not animal or not symptoms:
+            return jsonify({"error": "Missing animal or symptoms"}), 400
 
-        # Validate symptoms
-        if not symptoms or not isinstance(symptoms, list) or len(symptoms) == 0:
-            return jsonify({"error": "Please provide a list of symptoms"}), 400
-
-        # Proceed if all is valid
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Disease matching
-        disease = match_disease(cursor, animal, symptoms)
+        query = """
+            SELECT disease_name, symptoms, medicine
+            FROM diseases
+            WHERE animal_type = %s;
+        """
+        cursor.execute(query, (animal,))
+        rows = cursor.fetchall()
 
-        if not disease:
-            return jsonify({"message": "No disease match found for given symptoms"}), 404
+        disease_rows = []
+        for row in rows:
+            disease_rows.append({
+                "disease_name": row[0],
+                "symptoms": [s.strip().lower() for s in row[1].split(",")],
+                "medicine": row[2]
+            })
 
-        return jsonify({"animal": animal, "predicted_disease": disease}), 200
+        # Match disease
+        matched = match_disease(selected_symptoms=symptoms, disease_rows=disease_rows)
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "animal": animal,
+            "disease": matched["disease"],
+            "medicine": matched["medicine"]
+        }), 200
 
     except Exception as e:
-        print("Error:", e)
-        return jsonify({"error": "An internal server error occurred"}), 500
+        logger.error("Error in /predict-disease: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+@disease_bp.route("/test-db", methods=["GET"])
+def test_db_connection():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT animal_type, disease_name, symptoms, medicine FROM diseases LIMIT 5;")
+        rows = cursor.fetchall()
+
+        data = [
+            {
+                "animal_type": row[0],
+                "disease_name": row[1],
+                "symptoms": row[2],
+                "medicine": row[3]
+            }
+            for row in rows
+        ]
+
+        return jsonify({"status": "success", "data": data}), 200
+
+    except Exception as e:
+        logger.error("Error in /test-db: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
     finally:
         try:

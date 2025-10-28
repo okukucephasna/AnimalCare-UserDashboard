@@ -17,6 +17,7 @@ function Dashboard() {
     goats: ["fever", "diarrhea", "lethargy", "nasal discharge", "anorexia"],
   };
 
+  // Handle checkbox changes
   const handleSymptomChange = (symptom) => {
     setSymptoms((prev) =>
       prev.includes(symptom)
@@ -25,13 +26,21 @@ function Dashboard() {
     );
   };
 
+  // Submit the form
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setResult(null);
 
     try {
-      const response = await api.post("/predict-disease", { animal, symptoms });
+      // Normalize symptoms to lowercase to match backend
+      const normalizedSymptoms = symptoms.map((s) => s.toLowerCase());
+
+      const response = await api.post("/predict-disease", {
+        animal,
+        symptoms: normalizedSymptoms,
+      });
+
       setResult(response.data);
       setShowModal(true);
     } catch (err) {
@@ -55,7 +64,10 @@ function Dashboard() {
                 <Form.Label>Select Animal</Form.Label>
                 <Form.Select
                   value={animal}
-                  onChange={(e) => setAnimal(e.target.value)}
+                  onChange={(e) => {
+                    setAnimal(e.target.value);
+                    setSymptoms([]); // reset symptoms when animal changes
+                  }}
                   required
                 >
                   <option value="">-- Choose an Animal --</option>
