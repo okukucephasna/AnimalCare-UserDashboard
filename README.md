@@ -181,6 +181,9 @@ Content-Type: application/json
 5. A modal will show the disease and recommended medicine.
 
 ---
+Working demo
+<img width="959" height="401" alt="app working" src="https://github.com/user-attachments/assets/3cf5578b-c46f-4e0d-953f-b993a148f113" />
+
 
 ## License
 
